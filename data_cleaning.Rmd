@@ -1,0 +1,291 @@
+---
+title: "Data cleaning file"
+author: "Mingzhou_Fu"
+date: "9/3/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(writexl)
+library(haven)   # read in SAS file
+library(compareGroups)
+
+raw_data_path = '/Users/Mingzhou/Desktop/AD_Grant/HRS_raw/'
+work_data_path = '/Users/Mingzhou/Desktop/AD_Grant/DiaDem_MR/data/'
+output_path = '/Users/Mingzhou/Desktop/AD_Grant/DiaDem_MR/output/'
+
+# Original dataset
+raw_dataset = 'hrs_democoggen_wide20190813.Rda'
+load(paste0(raw_data_path, raw_dataset)) # -- N = 43,232
+# Kunkle PGS
+load(paste0(raw_data_path, "european_kunkle_pgss.rda"))
+load(paste0(raw_data_path, "african_kunkle_pgss.rda"))
+# Newly constructed T2DM PGS
+europ_pgst2d = read_sas(paste0(work_data_path, 'ea_ph13_t2dm.sas7bdat'))
+afric_pgst2d = read_sas(paste0(work_data_path, 'aa_ph13_t2dm.sas7bdat'))
+```
+
+# Dataset prepare
+## 1) Merge datasets together
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+kunkle_add = 
+  hrs %>% 
+  left_join(kunkle_afric, by = c('HHID' = 'HHID', 'PN' = 'PN')) %>% 
+  left_join(kunkle_europ, by = c('HHID' = 'HHID', 'PN' = 'PN')) %>% 
+  # Add an indicator of race
+  mutate(gen_ancestry = case_when(
+    !is.na(AAPC1_5A) ~ 'African',
+    !is.na(eaPC1_5A) ~ 'European'
+  )) %>% 
+  mutate(PC1_5A = case_when(
+    gen_ancestry == "European" ~ eaPC1_5A,
+    gen_ancestry == "African" ~ AAPC1_5A
+  )) %>% 
+  mutate(PC1_5B = case_when(
+    gen_ancestry == "European" ~ eaPC1_5B,
+    gen_ancestry == "African" ~ AAPC1_5B
+  )) %>% 
+  mutate(PC1_5C = case_when(
+    gen_ancestry == "European" ~ eaPC1_5C,
+    gen_ancestry == "African" ~ AAPC1_5C
+  )) %>% 
+  mutate(PC1_5D = case_when(
+    gen_ancestry == "European" ~ eaPC1_5D,
+    gen_ancestry == "African" ~ AAPC1_5D
+  )) %>% 
+  mutate(PC1_5E = case_when(
+    gen_ancestry == "European" ~ eaPC1_5E,
+    gen_ancestry == "African" ~ AAPC1_5E
+  )) 
+# N = 43,232
+
+new_pgs_add = 
+  kunkle_add %>% 
+  left_join(europ_pgst2d, by = c('HHID' = 'hhid', 'PN' = 'pn')) %>% 
+  left_join(afric_pgst2d, by = c('HHID' = 'hhid', 'PN' = 'pn'))
+# N = 43,232
+
+# Shortened data
+shorten_hrs = 
+  new_pgs_add %>% 
+  mutate(PGS_AD_Kunkle_1 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_1) ~ AAPH13_KunkleNAPOE_PT_1,
+    !is.na(EAPH13_KunkleNAPOE_PT_1) ~ EAPH13_KunkleNAPOE_PT_1
+  )) %>% 
+  mutate(PGS_AD_Kunkle_0_5 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_0_5) ~ AAPH13_KunkleNAPOE_PT_0_5,
+    !is.na(EAPH13_KunkleNAPOE_PT_0_5) ~ EAPH13_KunkleNAPOE_PT_0_5
+  )) %>%
+  mutate(PGS_AD_Kunkle_0_3 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_0_3) ~ AAPH13_KunkleNAPOE_PT_0_3,
+    !is.na(EAPH13_KunkleNAPOE_PT_0_3) ~ EAPH13_KunkleNAPOE_PT_0_3
+  )) %>% 
+  mutate(PGS_AD_Kunkle_0_1 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_0_1) ~ AAPH13_KunkleNAPOE_PT_0_1,
+    !is.na(EAPH13_KunkleNAPOE_PT_0_1) ~ EAPH13_KunkleNAPOE_PT_0_1
+  )) %>% 
+  mutate(PGS_AD_Kunkle_0_05 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_0_05) ~ AAPH13_KunkleNAPOE_PT_0_05,
+    !is.na(EAPH13_KunkleNAPOE_PT_0_05) ~ EAPH13_KunkleNAPOE_PT_0_05
+  )) %>% 
+  mutate(PGS_AD_Kunkle_0_01 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_0_01) ~ AAPH13_KunkleNAPOE_PT_0_01,
+    !is.na(EAPH13_KunkleNAPOE_PT_0_01) ~ EAPH13_KunkleNAPOE_PT_0_01
+  )) %>% 
+  mutate(PGS_AD_Kunkle_0_001 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_0_001) ~ AAPH13_KunkleNAPOE_PT_0_001,
+    !is.na(EAPH13_KunkleNAPOE_PT_0_001) ~ EAPH13_KunkleNAPOE_PT_0_001
+  )) %>% 
+  mutate(PGS_AD_Kunkle_5e_08 = case_when(
+    !is.na(AAPH13_KunkleNAPOE_PT_5e_08) ~ AAPH13_KunkleNAPOE_PT_5e_08,
+    !is.na(EAPH13_KunkleNAPOE_PT_5e_08) ~ EAPH13_KunkleNAPOE_PT_5e_08
+  )) %>% 
+  mutate(PGS_T2D_hrs = case_when(
+    gen_ancestry == "European" ~ EA_PGS3_T2D_DIAGRAM12,
+    gen_ancestry == "African" ~ AA_PGS3_T2D_DIAGRAM12
+  )) %>% 
+  mutate(PGS3_T2DM_0_001 = case_when(
+    gen_ancestry == "European" ~ EA_PGS3_T2DM_0_001,
+    gen_ancestry == "African" ~ AA_PGS3_T2DM_0_001
+  )) %>% 
+  mutate(PGS3_T2DM_0_01 = case_when(
+    gen_ancestry == "European" ~ EA_PGS3_T2DM_0_01,
+    gen_ancestry == "African" ~ AA_PGS3_T2DM_0_01
+  )) %>% 
+  mutate(PGS3_T2DM_0_05 = case_when(
+    gen_ancestry == "European" ~ EA_PGS3_T2DM_0_05,
+    gen_ancestry == "African" ~ AA_PGS3_T2DM_0_05
+  )) %>% 
+  mutate(PGS3_T2DM_0_1 = case_when(
+    gen_ancestry == "European" ~ EA_PGS3_T2DM_0_1,
+    gen_ancestry == "African" ~ AA_PGS3_T2DM_0_1
+  )) %>% 
+  mutate(PGS3_T2DM_0_3 = case_when(
+    gen_ancestry == "European" ~ EA_PGS3_T2DM_0_3,
+    gen_ancestry == "African" ~ AA_PGS3_T2DM_0_3
+  )) %>% 
+  mutate(PGS3_T2DM_1 = case_when(
+    gen_ancestry == "European" ~ EA_PGS3_T2DM_1,
+    gen_ancestry == "African" ~ AA_PGS3_T2DM_1
+  )) %>% 
+  mutate(PGS_GENCOG = case_when(
+    !is.na(AA_PGS3_GENCOG_CHRG15) ~ AA_PGS3_GENCOG_CHRG15,
+    !is.na(EA_PGS3_GENCOG_CHRG15) ~ EA_PGS3_GENCOG_CHRG15
+  )) %>% 
+  select(HHID, PN, STUDY, AD08, AD10, AD12, R9DIABE, R10DIABE, 
+         BIRTHYR, GENDER, SCHLYRS, gen_ancestry, MA009, MIWWAVE,
+         APOE2010_bin, PGS_AD_Kunkle_1, PGS_AD_Kunkle_0_5, PGS_AD_Kunkle_0_3, PGS_AD_Kunkle_0_1, PGS_AD_Kunkle_0_05, PGS_AD_Kunkle_0_01, PGS_AD_Kunkle_0_001, PGS_AD_Kunkle_5e_08, PGS_GENCOG,
+         PGS_T2D_hrs, PGS3_T2DM_0_001, PGS3_T2DM_0_01, PGS3_T2DM_0_05, PGS3_T2DM_0_1, PGS3_T2DM_0_3, PGS3_T2DM_1,
+         PC1_5A, PC1_5B, PC1_5C, PC1_5D, PC1_5E,
+         smoke10, R10DRINK, R10BMI, STROKE10, R10HIBPE)
+# N = 43,232 | 41 vars
+```
+
+## 2) Recode some variables
+```{r}
+summary(shorten_hrs)
+full_data =
+  shorten_hrs %>% 
+  mutate(AD_cat = case_when(
+    AD10 == 3 ~ "Normal",
+    AD10 == 2 ~ "CIND",
+    AD10 == 1 ~ "Dementia"
+  )) %>% 
+  mutate(AD10 = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "CIND" ~ 1,
+    AD_cat == "Dementia" ~ 2
+  )) %>% 
+  mutate(AD_former_cat = case_when(
+    AD08 == 3 ~ "Normal",
+    AD08 == 2 ~ "CIND",
+    AD08 == 1 ~ "Dementia"
+  )) %>% 
+  mutate(AD08 = case_when(
+    AD_former_cat == "Normal" ~ 0,
+    AD_former_cat == "CIND" ~ 1,
+    AD_former_cat == "Dementia" ~ 2
+  )) %>% 
+  mutate(AD_after_cat = case_when(
+    AD12 == 3 ~ "Normal",
+    AD12 == 2 ~ "CIND",
+    AD12 == 1 ~ "Dementia"
+  )) %>% 
+  mutate(AD12 = case_when(
+    AD_after_cat == "Normal" ~ 0,
+    AD_after_cat == "CIND" ~ 1,
+    AD_after_cat == "Dementia" ~ 2
+  )) %>% 
+  mutate(diab_cat = case_when(
+    R10DIABE == 1 ~ "Yes",
+    R10DIABE == 0 ~ "No"
+  )) %>% 
+  mutate(diab_former_cat = case_when(
+    R9DIABE == 1 ~ "Yes",
+    R9DIABE == 0 ~ "No"
+  )) %>% 
+  mutate(age = 2010 - BIRTHYR) %>% 
+  mutate(sex = GENDER - 1) %>% 
+  mutate(sex_cat = case_when(
+    sex == 0 ~ "Male",
+    sex == 1 ~ "Female"
+  )) %>% 
+  mutate(education = SCHLYRS) %>% 
+  mutate(proxy_cat = case_when(
+    MA009 == 1 ~ 'Self',
+    MA009 == 2 | MA009 == 3 ~ 'Proxy'
+  )) %>% 
+  mutate(stroke_cat = case_when(
+    STROKE10 == 1 ~ "Yes",
+    STROKE10 == 0 ~ "No"
+  )) %>% 
+  mutate(APOE2010_cat = case_when(
+    APOE2010_bin == 0 ~ "No",
+    APOE2010_bin == 1 ~ "Yes"
+  )) %>% 
+  mutate(HTN_cat = case_when(
+    R10HIBPE == 0 ~ "No",
+    R10HIBPE == 1 ~ "Yes"
+  )) %>% 
+  mutate(smoking_cat = case_when(
+    smoke10 == 0 ~ "Never",
+    smoke10 == 1 ~ "Former",
+    smoke10 == 2 ~ "Current"
+  )) %>% 
+  mutate(drinking_cat = case_when(
+    R10DRINK == 0 ~ "Never",
+    R10DRINK == 1 ~ "Ever"
+  )) %>% 
+  select(HHID, PN, STUDY, MIWWAVE, AD08, AD10, AD12, AD_former_cat, AD_cat, AD_after_cat, 
+         R9DIABE, R10DIABE, diab_cat, diab_former_cat,
+         age, sex, sex_cat, education, MA009, proxy_cat, gen_ancestry, 
+         APOE2010_bin, APOE2010_cat, PGS_AD_Kunkle_1, PGS_AD_Kunkle_0_5, PGS_AD_Kunkle_0_3, PGS_AD_Kunkle_0_1, PGS_AD_Kunkle_0_05, PGS_AD_Kunkle_0_01, PGS_AD_Kunkle_0_001, PGS_AD_Kunkle_5e_08, PGS_GENCOG,
+         PGS_T2D_hrs, PGS3_T2DM_0_001, PGS3_T2DM_0_01, PGS3_T2DM_0_05, PGS3_T2DM_0_1, PGS3_T2DM_0_3, PGS3_T2DM_1,
+         PC1_5A, PC1_5B, PC1_5C, PC1_5D, PC1_5E,
+         smoke10, smoking_cat, R10DRINK, drinking_cat, R10BMI, STROKE10, stroke_cat, R10HIBPE, HTN_cat
+         )
+# N = 43,232 | 53 vars
+```
+
+## 3) Sample selection
+```{r}
+# Wave 2010 data -- N = 23,614
+data_2010 = 
+  full_data %>% 
+  filter(MIWWAVE == 1)
+save(data_2010, file = paste0(work_data_path, "data_2010.rda"))
+
+# Complete cognitive, diabetes and genetic data -- N = 10,876
+complete_cogen = 
+  data_2010 %>% 
+  filter(!is.na(PGS_T2D_hrs) & !is.na(AD10) & !is.na(diab_cat) & !is.na(PGS3_T2DM_0_01))
+
+# No missing in primary model -- age, sex, education  - N = 10,851
+complete_covar = 
+  complete_cogen %>% 
+  filter(!is.na(age) & !is.na(sex) & !is.na(education))
+
+# Age between 50 and 90 -- N = 10,371
+age_restrict = 
+  complete_covar %>% 
+  filter(age <= 90 & age >= 50)
+
+# No reversed cognition -- N = 49
+reverse_sample_AD =
+  age_restrict %>% 
+  filter((AD_former_cat == "Dementia" & AD_cat == "Normal") | (AD_cat == "Dementia" & AD_after_cat == "Normal")) 
+# No reversed diabetes -- N = 0
+reverse_sample_T2D = 
+  age_restrict %>% 
+  filter(R9DIABE == 1 & R10DIABE == 0)
+
+final_sample = 
+  age_restrict %>% 
+  anti_join(reverse_sample_AD, by = c('HHID' = 'HHID', 'PN' = 'PN'))
+# N = 10,322
+
+save(final_sample, file = paste0(work_data_path, "eligible_all.rda"))
+```
+
+## 4) Separate by ancestry
+```{r}
+europ =
+  final_sample %>% 
+  dplyr::filter(gen_ancestry == 'European')
+# N = 8,433
+afric = 
+  final_sample %>% 
+  dplyr::filter(gen_ancestry == 'African')
+# N = 1,889
+
+save(europ, file = paste0(work_data_path, "europ10.rda"))
+save(afric, file = paste0(work_data_path, "afric10.rda"))
+```
+
+

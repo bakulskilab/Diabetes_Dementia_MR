@@ -1,0 +1,1238 @@
+---
+title: "Sensitivity analysis file"
+author: "Mingzhou_Fu"
+date: "9/4/2020"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(writexl)
+library(compareGroups)
+library(ggplot2)
+library(hrbrthemes)  # For plotting
+library(viridis)   # For plotting
+library(sjlabelled)
+library(epiflow)
+```
+
+```{r}
+source_path = '/Users/Mingzhou/Desktop/Materials/General R/code/'
+work_data_path = '/Users/Mingzhou/Desktop/AD_Grant/DiaDem_MR/data/'
+output_path = '/Users/Mingzhou/Desktop/AD_Grant/DiaDem_MR/output/'
+
+# Original dataset
+load(paste0(work_data_path, 'data_2010.rda')) 
+load(paste0(work_data_path, 'eligible_all.rda')) 
+load(paste0(work_data_path, 'europ10.rda'))
+load(paste0(work_data_path, 'afric10.rda'))
+```
+
+# Part 1: Included vs. Excluded Data
+## Parpare dataset
+```{r}
+included = 
+  final_sample %>% 
+  mutate(group = 'included')
+excluded = 
+  data_2010 %>% 
+  anti_join(included, by = c('HHID' = 'HHID', 'PN' = 'PN')) %>% 
+  mutate(group = "excluded")
+
+total_test = rbind(included, excluded)
+```
+
+## Bivariate analysis
+```{r}
+total_test_nolabel = remove_all_labels(total_test)
+table1_sens = descrTable(group ~ diab_cat + AD_cat + age + gen_ancestry + sex_cat + education + 
+                          stroke_cat + APOE2010_cat + HTN_cat + smoking_cat + drinking_cat + proxy_cat +
+                          R10BMI + PGS3_T2DM_1 + PGS_AD_Kunkle_0_01, 
+                          total_test_nolabel, hide.no = "No", show.all = T)
+compareGroups::export2csv(table1_sens, file = paste0(output_path, 'sens_inexclude_0904.csv'))
+```
+
+# Part 2: Negative control
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'CIND_adj2', 'Dem_adj2', 'CIND_adj3', 'Dem_adj3')
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+```
+
+```{r}
+europ = 
+  europ %>% 
+  filter(!is.na(smoke10) & !is.na(drinking_cat) & !is.na(HTN_cat) & !is.na(stroke_cat) & !is.na(R10BMI))
+# N = 8,289
+
+negative_CIND = 
+  europ %>% 
+  filter(R10DIABE == 0) %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "CIND") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "CIND" ~ 1
+  ))
+# N = 6,478
+
+negative_Dem = 
+  europ %>% 
+  filter(R10DIABE == 0) %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "Dementia") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "Dementia" ~ 1
+  ))
+# N = 5,886
+```
+
+```{r HDL PGS and Cognitive status, message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1'))
+CIND_crude = glm(crude, data = negative_CIND, family = 'binomial')
+Dem_crude = glm(crude, data = negative_Dem, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', demographic))
+CIND_adj1 = glm(f1, data = negative_CIND, family = 'binomial')
+Dem_adj1 = glm(f1, data = negative_Dem, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', health_behavior))
+CIND_adj2 = glm(f2, data = negative_CIND, family = 'binomial')
+Dem_adj2 = glm(f2, data = negative_Dem, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', gene_add))
+CIND_adj3 = glm(f3, data = negative_CIND, family = 'binomial')
+Dem_adj3 = glm(f3, data = negative_Dem, family = 'binomial')
+
+adpgs_neg = make_OR_table(lst_model, 2, 'adpgs_neg_')
+```
+
+```{r}
+sheets_OR = list('negative_control' = adpgs_neg)
+write_xlsx(sheets_OR, path = paste0(output_path, 'negative_control.xlsx'))
+```
+
+# Part 3: Different P thresholds
+```{r}
+pc_only = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+```
+
+```{r}
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_0_3'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_0_3'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_0_3 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_3 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_3 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_3 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude_0_3')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj_0_3')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full_0_3')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene_0_3')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude_0_3')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj_0_3')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full_0_3')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene_0_3')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df_0_3 = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df_0_3) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_0_1'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_0_1'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_0_1 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_1 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_1 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_1 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude_0_1')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj_0_1')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full_0_1')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene_0_1')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude_0_1')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj_0_1')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full_0_1')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene_0_1')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df_0_1 = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df_0_1) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_0_05'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_0_05'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_0_05 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_05 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_05 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_05 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude_0_05')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj_0_05')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full_0_05')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene_0_05')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude_0_05')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj_0_05')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full_0_05')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene_0_05')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df_0_05 = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df_0_05) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_0_01'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_0_01'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_0_01 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_01 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_01 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_01 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude_0_01')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj_0_01')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full_0_01')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene_0_01')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude_0_01')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj_0_01')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full_0_01')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene_0_01')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df_0_01 = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df_0_01) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_0_001'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_0_001'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_0_001 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_001 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_001 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_0_001 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude_0_001')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj_0_001')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full_0_001')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene_0_001')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude_0_001')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj_0_001')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full_0_001')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene_0_001')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df_0_001 = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df_0_001) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+sens_mr_pgs = rbind(diab_mr_df_0_3, diab_mr_df_0_1, diab_mr_df_0_05, diab_mr_df_0_01, diab_mr_df_0_001)
+sheets_OR = list('sens_mr_pgs' = sens_mr_pgs)
+write_xlsx(sheets_OR, path = paste0(output_path, 'sens_mr_pgs.xlsx'))
+```
+
+# Part 4. Younger population
+```{r}
+younger_europ = 
+  europ %>% 
+  filter(age <= 80) 
+# N = 6,952
+```
+
+## 1. Prepare datasets
+```{r Separate datasets, message=FALSE, warning=FALSE}
+cind_normal = 
+  younger_europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "CIND") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "CIND" ~ 1
+  ))
+# N = 6,818
+
+dementia_normal = 
+  younger_europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "Dementia") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "Dementia" ~ 1
+  ))
+# N = 6,231
+```
+
+## 2. PGS T2DM and diabetes history
+### 1) Name models and adjusted variables
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'full_crude', 'full_adj1')
+gene_adj_basic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+# Function for improvement Chi-square
+G_square = function(L_full, L_reduced) {
+  output = 2*(L_full - L_reduced)
+}
+```
+
+### 2) Regression models
+```{r message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_1'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+full_crude = glm(crude, data = younger_europ, family = 'binomial')
+
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ PGS3_T2DM_1 + ', gene_adj_basic))
+# Reduced model
+f_reduced = as.formula(paste('R10DIABE ~ ', gene_adj_basic))
+
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+CIND_reduced = glm(f_reduced, data = cind_normal, family = 'binomial')
+cind_G = G_square(logLik(CIND_adj1)[1], logLik(CIND_reduced)[1])
+print(paste0("CIND: ", round(cind_G, 2)))
+
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+Dem_reduced = glm(f_reduced, data = dementia_normal, family = 'binomial')
+dementia_G = G_square(logLik(Dem_adj1)[1], logLik(Dem_reduced)[1])
+print(paste0("Dementia: ", round(dementia_G, 2)))
+
+full_adj1 = glm(f1, data = younger_europ, family = 'binomial')
+full_reduced = glm(f_reduced, data = younger_europ, family = 'binomial')
+full_G = G_square(logLik(full_adj1)[1], logLik(full_reduced)[1])
+print(paste0("Full: ", round(full_G, 2)))
+
+diab_pgs = make_OR_table(lst_model, 2, 'diab_pgs_')
+```
+
+## 3. Diabetes history and Cognitive Status
+### 2) Back to logistic regression
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'CIND_adj2', 'Dem_adj2', 'CIND_adj3', 'Dem_adj3')
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+```
+
+```{r HDL and Cognitive status, message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('AD_bin ~ ', 'R10DIABE'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ R10DIABE + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ R10DIABE + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ R10DIABE + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_ad = make_OR_table(lst_model, 2, 'diab_ad_')
+```
+
+#### C. Cognitive Status ~ T2DM PGS + diabetes history
+##### 1) Total effect
+```{r message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs_tot = make_OR_table(lst_model, 2, 'diab_adpgs_t_')
+```
+
+##### 2) Direct effect
+```{r HDL PGS and Cognitive status, message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1 + R10DIABE'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs1 = make_OR_table(lst_model, 2, 'diab_adpgs1_')
+diab_adpgs2 = make_OR_table(lst_model, 3, 'diab_adpgs2_')
+```
+
+```{r}
+main_diab = rbind(diab_pgs, diab_ad, diab_adpgs_tot, diab_adpgs1, diab_adpgs2)
+```
+
+#### D. Mendelian Randomization
+```{r}
+pc_only = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_1'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_1 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+sheets_OR = list('main_diab' = main_diab,
+                 'diab_mr_df' = diab_mr_df)
+write_xlsx(sheets_OR, path = paste0(output_path, 'younger_diab_0908.xlsx'))
+```
+
+
+# Part 4.5 Old population (age between 65 and 90)
+```{r}
+older_europ = 
+  europ %>% 
+  filter(age >= 65) 
+# N = 5,577
+```
+
+## 1. Prepare datasets
+```{r Separate datasets, message=FALSE, warning=FALSE}
+cind_normal = 
+  older_europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "CIND") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "CIND" ~ 1
+  ))
+# N = 5,268
+
+dementia_normal = 
+  older_europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "Dementia") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "Dementia" ~ 1
+  ))
+# N = 4,624
+```
+
+## 2. PGS T2DM and diabetes history
+### 1) Name models and adjusted variables
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'full_crude', 'full_adj1')
+gene_adj_basic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+# Function for improvement Chi-square
+G_square = function(L_full, L_reduced) {
+  output = 2*(L_full - L_reduced)
+}
+```
+
+### 2) Regression models
+```{r message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_1'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+full_crude = glm(crude, data = older_europ, family = 'binomial')
+
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ PGS3_T2DM_1 + ', gene_adj_basic))
+# Reduced model
+f_reduced = as.formula(paste('R10DIABE ~ ', gene_adj_basic))
+
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+CIND_reduced = glm(f_reduced, data = cind_normal, family = 'binomial')
+cind_G = G_square(logLik(CIND_adj1)[1], logLik(CIND_reduced)[1])
+print(paste0("CIND: ", round(cind_G, 2)))
+
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+Dem_reduced = glm(f_reduced, data = dementia_normal, family = 'binomial')
+dementia_G = G_square(logLik(Dem_adj1)[1], logLik(Dem_reduced)[1])
+print(paste0("Dementia: ", round(dementia_G, 2)))
+
+full_adj1 = glm(f1, data = older_europ, family = 'binomial')
+full_reduced = glm(f_reduced, data = older_europ, family = 'binomial')
+full_G = G_square(logLik(full_adj1)[1], logLik(full_reduced)[1])
+print(paste0("Full: ", round(full_G, 2)))
+
+diab_pgs = make_OR_table(lst_model, 2, 'diab_pgs_')
+```
+
+## 3. Diabetes history and Cognitive Status
+### 2) Back to logistic regression
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'CIND_adj2', 'Dem_adj2', 'CIND_adj3', 'Dem_adj3')
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+```
+
+```{r HDL and Cognitive status, message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('AD_bin ~ ', 'R10DIABE'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ R10DIABE + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ R10DIABE + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ R10DIABE + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_ad = make_OR_table(lst_model, 2, 'diab_ad_')
+```
+
+#### C. Cognitive Status ~ T2DM PGS + diabetes history
+##### 1) Total effect
+```{r message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs_tot = make_OR_table(lst_model, 2, 'diab_adpgs_t_')
+```
+
+##### 2) Direct effect
+```{r HDL PGS and Cognitive status, message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1 + R10DIABE'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs1 = make_OR_table(lst_model, 2, 'diab_adpgs1_')
+diab_adpgs2 = make_OR_table(lst_model, 3, 'diab_adpgs2_')
+```
+
+```{r}
+main_diab = rbind(diab_pgs, diab_ad, diab_adpgs_tot, diab_adpgs1, diab_adpgs2)
+```
+
+#### D. Mendelian Randomization
+```{r}
+pc_only = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_1'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_1 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+sheets_OR = list('main_diab' = main_diab,
+                 'diab_mr_df' = diab_mr_df)
+write_xlsx(sheets_OR, path = paste0(output_path, 'older_diab_0115.xlsx'))
+```
+
+
+# Part 5. Reverse causation check -- within europ ancestery (full)
+## 2. PGS T2DM and diabetes history
+### 1) Name models and adjusted variables
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1')
+gene_adj_basic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+# Function for improvement Chi-square
+G_square = function(L_full, L_reduced) {
+  output = 2*(L_full - L_reduced)
+}
+```
+
+### 2) Regression models
+```{r message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('AD_bin ~ ', 'PGS_AD_Kunkle_0_01'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ PGS_AD_Kunkle_0_01 + ', gene_adj_basic))
+# Reduced model
+f_reduced = as.formula(paste('R10DIABE ~ ', gene_adj_basic))
+
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+CIND_reduced = glm(f_reduced, data = cind_normal, family = 'binomial')
+cind_G = G_square(logLik(CIND_adj1)[1], logLik(CIND_reduced)[1])
+print(paste0("CIND: ", round(cind_G, 2)))
+
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+Dem_reduced = glm(f_reduced, data = dementia_normal, family = 'binomial')
+dementia_G = G_square(logLik(Dem_adj1)[1], logLik(Dem_reduced)[1])
+print(paste0("Dementia: ", round(dementia_G, 2)))
+
+diab_pgs = make_OR_table(lst_model, 2, 'diab_pgs_')
+```
+
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'CIND_adj2', 'Dem_adj2', 'CIND_adj3', 'Dem_adj3')
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS3_T2DM_1')
+```
+
+```{r HDL and Cognitive status, message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('R10DIABE ~ ', 'AD_bin'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ AD_bin + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('R10DIABE ~ AD_bin + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('R10DIABE ~ AD_bin + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_ad = make_OR_table(lst_model, 2, 'diab_ad_')
+```
+
+#### C. Cognitive Status ~ T2DM PGS + diabetes history
+##### 1) Total effect
+```{r message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('R10DIABE ~ ', 'PGS_AD_Kunkle_0_01'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs_tot = make_OR_table(lst_model, 2, 'diab_adpgs_t_')
+```
+
+##### 2) Direct effect
+```{r HDL PGS and Cognitive status, message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('R10DIABE ~ ', 'PGS_AD_Kunkle_0_01 + AD_bin'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs1 = make_OR_table(lst_model, 2, 'diab_adpgs1_')
+diab_adpgs2 = make_OR_table(lst_model, 3, 'diab_adpgs2_')
+```
+
+```{r}
+main_diab = rbind(diab_pgs, diab_ad, diab_adpgs_tot, diab_adpgs1, diab_adpgs2)
+```
+
+#### D. Mendelian Randomization
+```{r}
+pc_only = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS3_T2DM_1')
+
+# List all formula
+f0_exposure = as.formula(paste('AD_bin ~ ', 'PGS_AD_Kunkle_0_01'))
+f0_outcome = as.formula(paste('R10DIABE ~ ', 'PGS_AD_Kunkle_0_01'))
+
+f1_exposure = as.formula(paste('AD_bin ~ PGS_AD_Kunkle_0_01 + ', pc_only))
+f1_outcome = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', demographic))
+f2_outcome = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', health_behavior))
+f3_outcome = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+```
+
+```{r}
+sheets_OR = list('main_diab' = main_diab,
+                 'diab_mr_df' = diab_mr_df)
+write_xlsx(sheets_OR, path = paste0(output_path, 'reverse_0908.xlsx'))
+```
+
+
+# Part 6. African ancestry
+## 1. Prepare datasets
+```{r Separate datasets, message=FALSE, warning=FALSE}
+afric = 
+  afric %>% 
+  filter(!is.na(smoke10) & !is.na(drinking_cat) & !is.na(HTN_cat) & !is.na(stroke_cat) & !is.na(R10BMI))
+# N = 1,862
+
+cind_normal = 
+  afric %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "CIND") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "CIND" ~ 1
+  ))
+# N = 1,694
+
+dementia_normal = 
+  afric %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "Dementia") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "Dementia" ~ 1
+  ))
+# N = 1,349
+```
+
+## 2. PGS T2DM and diabetes history
+### 1) Name models and adjusted variables
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'full_crude', 'full_adj1')
+gene_adj_basic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+# Function for improvement Chi-square
+G_square = function(L_full, L_reduced) {
+  output = 2*(L_full - L_reduced)
+}
+```
+
+### 2) Regression model
+#### Try new T2DM PGS
+```{r message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_1'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+full_crude = glm(crude, data = afric, family = 'binomial')
+
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ PGS3_T2DM_1 + ', gene_adj_basic))
+# Reduced model
+f_reduced = as.formula(paste('R10DIABE ~ ', gene_adj_basic))
+
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+CIND_reduced = glm(f_reduced, data = cind_normal, family = 'binomial')
+cind_G = G_square(logLik(CIND_adj1)[1], logLik(CIND_reduced)[1])
+print(paste0("CIND: ", round(cind_G, 2)))
+
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+Dem_reduced = glm(f_reduced, data = dementia_normal, family = 'binomial')
+dementia_G = G_square(logLik(Dem_adj1)[1], logLik(Dem_reduced)[1])
+print(paste0("Dementia: ", round(dementia_G, 2)))
+
+full_adj1 = glm(f1, data = afric, family = 'binomial')
+full_reduced = glm(f_reduced, data = afric, family = 'binomial')
+full_G = G_square(logLik(full_adj1)[1], logLik(full_reduced)[1])
+print(paste0("Full: ", round(full_G, 2)))
+
+diab_pgs = make_OR_table(lst_model, 2, 'diab_pgs_')
+```
+
+#### C. Cognitive Status ~ T2DM PGS + diabetes history
+```{r}
+lst_model = c('CIND_crude', 'Dem_crude', 'CIND_adj1', 'Dem_adj1', 'CIND_adj2', 'Dem_adj2', 'CIND_adj3', 'Dem_adj3')
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+```
+
+##### 1) Total effect
+```{r message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('R10DIABE ~ ', 'PGS_AD_Kunkle_0_01'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs_tot = make_OR_table(lst_model, 2, 'diab_adpgs_t_')
+```
+
+##### 2) Direct effect
+```{r HDL PGS and Cognitive status, message=FALSE, warning=FALSE}
+# Crude
+crude = as.formula(paste('R10DIABE ~ ', 'PGS_AD_Kunkle_0_01 + AD_bin'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_adpgs1 = make_OR_table(lst_model, 2, 'diab_adpgs1_')
+diab_adpgs2 = make_OR_table(lst_model, 3, 'diab_adpgs2_')
+```
+
+## 3. Diabetes history and Cognitive Status
+```{r HDL and Cognitive status, message=FALSE, warning=FALSE}
+# Crude 
+crude = as.formula(paste('AD_bin ~ ', 'R10DIABE'))
+CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
+Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
+# Adding in demographic variables
+f1 = as.formula(paste('AD_bin ~ R10DIABE + ', demographic))
+CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
+Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
+# Adding in health status variables
+f2 = as.formula(paste('AD_bin ~ R10DIABE + ', health_behavior))
+CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
+Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
+# Adding in AD genetic variables
+f3 = as.formula(paste('AD_bin ~ R10DIABE + ', gene_add))
+CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
+Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
+
+diab_ad = make_OR_table(lst_model, 2, 'diab_ad_')
+```
+
+```{r}
+main_diab = rbind(diab_pgs, diab_ad, diab_adpgs_tot, diab_adpgs1, diab_adpgs2)
+```
+
+```{r}
+sheets_OR = list('main_diab' = main_diab)
+write_xlsx(sheets_OR, path = paste0(output_path, 'main_diab_Afric_0904.xlsx'))
+```
+
+# Part 7: Correlation tests: PGS AD and all other covariates -- European
+```{r message=FALSE, warning=FALSE}
+var_names <- c('R10DIABE', 'AD10', 'sex', 'R10HIBPE', 'STROKE10', 'smoke10', 'R10DRINK', 'APOE2010_bin', 
+               'age', 'education', 'R10BMI', 'PGS3_T2DM_1')
+explanary_names <- c('Diabetes', 'Cognitive status', 'Sex', 'Hypertension', 'Stroke', 'Smoking status', 'Drinking status', 'APOE4 allele carrier', 
+                     'Age', 'Years of education', 'BMI', "PGS for T2DM")
+
+model <- lapply(var_names, function(x) {
+  lm(substitute(PGS_AD_Kunkle_0_01 ~ i, list(i = as.name(x))), data = europ)
+})
+
+
+build_coef_table <- function(var_names, model) {
+  
+  summary_results <- lapply(model, summary)
+  
+  # Make to a full table
+  coef_table = array(NA, dim = c(length(var_names), 6))
+  
+  for (i in 1:length(var_names)) {
+    
+    coeff = summary_results[[i]]$coefficients[2]
+    # stderr = summary_results[[i]]$coefficients[4]
+    confinterval = confint(model[[i]], level = 0.95)
+    lower_CI = confinterval[2]
+    upper_CI = confinterval[4]
+    CI_95 = paste0(sprintf('%.2f', coeff), ' (', sprintf('%.2f',lower_CI), ', ', sprintf('%.2f',upper_CI), ')')
+    
+    coef_table[i,1] = var_names[i]
+    coef_table[i,2] = length(summary_results[[i]]$residuals)
+    coef_table[i,3] = coeff
+    coef_table[i,4] = lower_CI
+    coef_table[i,5] = upper_CI
+    coef_table[i,6] = CI_95
+    
+    i = i + 1
+  }
+  
+  coef_table_final = as.data.frame(coef_table)
+  colnames(coef_table_final) = c('var_name', 'N', 'beta', 'lower_CI', 'upper_CI', 'text')
+  
+  return(coef_table_final)
+}
+
+table1 <- build_coef_table(var_names, model)
+
+forest.data =
+  table1 %>% 
+  dplyr::select(beta, lower_CI, upper_CI) %>% 
+  mutate(sub = c('Categorical', rep(NA, 7), 
+                 'Continuous' , rep(NA, 3))) %>% 
+  mutate(beta = round(as.numeric(as.character(beta)), 3),
+         lower_CI = round(as.numeric(as.character(lower_CI)), 2),
+         upper_CI = round(as.numeric(as.character(upper_CI)), 2)) %>% 
+  mutate(class = c(rep(2, 8), rep(3, 4)))
+
+library(forestplot)
+
+tabletext <- cbind(
+  c("Category", "\n", forest.data$sub),
+  c("Exposure", "\n", explanary_names),
+  c("Beta coefficient (95% CI)", "\n", as.character(table1$text))
+)
+
+pop.cols <- c("black","black","black")
+
+
+pdf("~/Desktop/PGS_Forest_AD_0913.pdf",width = 10, height = 6)
+forestplot(labeltext = tabletext, graph.pos = 1,
+           mean = c(NA, NA, forest.data$beta), 
+           lower = c(NA, NA, forest.data$lower_CI),
+           upper = c(NA, NA, forest.data$upper_CI),
+           
+           xticks = c(-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3),
+           zero = 0,
+           
+           title = "SFigure 2. Associations between covariates and AD polygenic risk score, Health and Retirement Study, 
+           Wave 2010, African ancestry sample (n = 8,433)",
+           xlab = "Effect Size of covariates on AD polygenic risk score",
+           
+           txt_gp = fpTxtGp(label = list(gpar(fontface = "bold", cex = 0.8, fontfamily = "serif"),
+                                         gpar(cex = 0.8, fontfamily = "serif"),
+                                         gpar(cex = 0.8, fontfamily = "serif")),
+                            ticks = gpar(cex = 0.6, fontfamily = "serif"),
+                            xlab = gpar(cex = 0.8, fontfamily = "serif"),
+                            title = gpar(cex = 1, fontfamily = "serif")),
+           col = fpColors(text = pop.cols[c(1, 1, forest.data$class)], 
+                          box  ="black",
+                          lines = "black", 
+                          zero ="gray50"),
+           
+           cex = 0.2, lineheight = "auto", boxsize = 0.25, 
+           lwd.ci = 1, ci.vertices = TRUE, ci.vertices.height = 0.15)
+dev.off()
+```
+
+
+
