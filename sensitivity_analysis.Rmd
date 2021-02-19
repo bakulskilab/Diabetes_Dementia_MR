@@ -50,7 +50,7 @@ table1_sens = descrTable(group ~ diab_cat + AD_cat + age + gen_ancestry + sex_ca
                           stroke_cat + APOE2010_cat + HTN_cat + smoking_cat + drinking_cat + proxy_cat +
                           R10BMI + PGS3_T2DM_1 + PGS_AD_Kunkle_0_01, 
                           total_test_nolabel, hide.no = "No", show.all = T)
-compareGroups::export2csv(table1_sens, file = paste0(output_path, 'sens_inexclude_0904.csv'))
+compareGroups::export2csv(table1_sens, file = paste0(output_path, 'sens_inexclude_0215.csv'))
 ```
 
 # Part 2: Negative control
@@ -120,6 +120,24 @@ pc_only = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1
 demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
 health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
 gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+
+cind_normal = 
+  europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "CIND") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "CIND" ~ 1
+  ))
+# N = 7,979
+
+dementia_normal = 
+  europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "Dementia") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "Dementia" ~ 1
+  ))
+# N = 7,186
 ```
 
 ```{r}
@@ -591,13 +609,33 @@ sheets_OR = list('main_diab' = main_diab,
 write_xlsx(sheets_OR, path = paste0(output_path, 'younger_diab_0908.xlsx'))
 ```
 
+```{r}
+# Calculate z score (p for heterogen)
+convert.z.score <- function(z, one.sided = NULL) {
+    if(is.null(one.sided)) {
+        pval = pnorm(-abs(z));
+        pval = 2 * pval
+    } else if(one.sided=="-") {
+        pval = pnorm(z);
+    } else {
+        pval = pnorm(-z);                                                                                 
+    }
+    return(pval);
+}
+
+z_lst = c(2.98, 1.8, 1.74, 1.74, 0.3, -0.16, 0.18, 0.13)
+for(z in z_lst) {
+  print(convert.z.score(z))
+}
+```
+
 
 # Part 4.5 Old population (age between 65 and 90)
 ```{r}
 older_europ = 
   europ %>% 
   filter(age >= 65) 
-# N = 5,577
+# N = 5,479
 ```
 
 ## 1. Prepare datasets
@@ -609,7 +647,7 @@ cind_normal =
     AD_cat == "Normal" ~ 0,
     AD_cat == "CIND" ~ 1
   ))
-# N = 5,268
+# N = 5,177
 
 dementia_normal = 
   older_europ %>% 
@@ -618,7 +656,7 @@ dementia_normal =
     AD_cat == "Normal" ~ 0,
     AD_cat == "Dementia" ~ 1
   ))
-# N = 4,624
+# N = 4,541
 ```
 
 ## 2. PGS T2DM and diabetes history
@@ -805,8 +843,35 @@ sheets_OR = list('main_diab' = main_diab,
 write_xlsx(sheets_OR, path = paste0(output_path, 'older_diab_0115.xlsx'))
 ```
 
+```{r}
+z_lst = c(2.51, 1.49, 1.73, 1.73, 0.98, 0.33, 0.74, 0.68)
+for(z in z_lst) {
+  print(convert.z.score(z))
+}
+```
+
 
 # Part 5. Reverse causation check -- within europ ancestery (full)
+```{r}
+cind_normal = 
+  europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "CIND") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "CIND" ~ 1
+  ))
+# N = 7,979
+
+dementia_normal = 
+  europ %>% 
+  dplyr::filter(AD_cat == "Normal" | AD_cat == "Dementia") %>% 
+  mutate(AD_bin = case_when(
+    AD_cat == "Normal" ~ 0,
+    AD_cat == "Dementia" ~ 1
+  ))
+# N = 7,186
+```
+
 ## 2. PGS T2DM and diabetes history
 ### 1) Name models and adjusted variables
 ```{r}
@@ -1065,19 +1130,19 @@ gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
 ##### 1) Total effect
 ```{r message=FALSE, warning=FALSE}
 # Crude
-crude = as.formula(paste('R10DIABE ~ ', 'PGS_AD_Kunkle_0_01'))
+crude = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1'))
 CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
 Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
 # Adding in demographic variables
-f1 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', demographic))
+f1 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', demographic))
 CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
 Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
 # Adding in health status variables
-f2 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', health_behavior))
+f2 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', health_behavior))
 CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
 Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
 # Adding in AD genetic variables
-f3 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + ', gene_add))
+f3 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', gene_add))
 CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
 Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
 
@@ -1133,8 +1198,84 @@ diab_ad = make_OR_table(lst_model, 2, 'diab_ad_')
 main_diab = rbind(diab_pgs, diab_ad, diab_adpgs_tot, diab_adpgs1, diab_adpgs2)
 ```
 
+#### D. Mendelian Randomization
 ```{r}
-sheets_OR = list('main_diab' = main_diab)
+pc_only = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+demographic = 'age + sex + education + APOE2010_bin + PC1_5A + PC1_5B + PC1_5C + PC1_5D + PC1_5E'
+health_behavior = paste0(demographic, ' + STROKE10 + R10BMI + R10HIBPE + smoking_cat + R10DRINK')
+gene_add = paste0(health_behavior, ' + PGS_AD_Kunkle_0_01')
+
+# List all formula
+f0_exposure = as.formula(paste('R10DIABE ~ ', 'PGS3_T2DM_1'))
+f0_outcome = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1'))
+
+f1_exposure = as.formula(paste('R10DIABE ~ PGS3_T2DM_1 + ', pc_only))
+f1_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', demographic))
+f2_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', health_behavior))
+f3_outcome = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + ', gene_add))
+
+# CIND
+CIND_MR_1 = glm(f0_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_2 = glm(f0_outcome, data = cind_normal, family = 'binomial')
+CIND_crude_mr = get_MR_value(CIND_MR_1, CIND_MR_2, 'CIND_crude')
+
+CIND_MR_3 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_4 = glm(f1_outcome, data = cind_normal, family = 'binomial')
+CIND_adjust_mr = get_MR_value(CIND_MR_3, CIND_MR_4, 'CIND_adj')
+
+CIND_MR_5 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_6 = glm(f2_outcome, data = cind_normal, family = 'binomial')
+CIND_full_mr = get_MR_value(CIND_MR_5, CIND_MR_6, 'CIND_full')
+
+CIND_MR_7 = glm(f1_exposure, data = cind_normal, family = 'binomial')
+CIND_MR_8 = glm(f3_outcome, data = cind_normal, family = 'binomial')
+CIND_gene_mr = get_MR_value(CIND_MR_7, CIND_MR_8, 'CIND_gene')
+# Dementia
+Dem_MR_1 = glm(f0_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_2 = glm(f0_outcome, data = dementia_normal, family = 'binomial')
+Dem_crude_mr = get_MR_value(Dem_MR_1, Dem_MR_2, 'Dem_crude')
+
+Dem_MR_3 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_4 = glm(f1_outcome, data = dementia_normal, family = 'binomial')
+Dem_adjust_mr = get_MR_value(Dem_MR_3, Dem_MR_4, 'Dem_adj')
+
+Dem_MR_5 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_6 = glm(f2_outcome, data = dementia_normal, family = 'binomial')
+Dem_full_mr = get_MR_value(Dem_MR_5, Dem_MR_6, 'Dem_full')
+
+Dem_MR_7 = glm(f1_exposure, data = dementia_normal, family = 'binomial')
+Dem_MR_8 = glm(f3_outcome, data = dementia_normal, family = 'binomial')
+Dem_gene_mr = get_MR_value(Dem_MR_7, Dem_MR_8, 'Dem_gene')
+
+# Bind together
+diab_mr_bind = rbind(CIND_crude_mr, CIND_adjust_mr, CIND_full_mr, CIND_gene_mr,
+                Dem_crude_mr, Dem_adjust_mr, Dem_full_mr, Dem_gene_mr)
+diab_mr_df = as.data.frame(diab_mr_bind)
+colnames(diab_mr_df) = c('mark', 'estimate', '95% CI', 'OR', '95% CI_OR', 'p-value')
+
+# Calculate z score (p for heterogen)
+convert.z.score <- function(z, one.sided = NULL) {
+    if(is.null(one.sided)) {
+        pval = pnorm(-abs(z));
+        pval = 2 * pval
+    } else if(one.sided=="-") {
+        pval = pnorm(z);
+    } else {
+        pval = pnorm(-z);                                                                                 
+    }
+    return(pval);
+}
+
+z_lst = c(0.55, -0.36, -0.23, -0.26, -1.59, -0.60, -0.42, -0.33)
+for(z in z_lst) {
+  print(convert.z.score(z))
+}
+```
+
+
+```{r}
+sheets_OR = list('main_diab' = main_diab,
+                 'diab_mr_df' = diab_mr_df)
 write_xlsx(sheets_OR, path = paste0(output_path, 'main_diab_Afric_0904.xlsx'))
 ```
 

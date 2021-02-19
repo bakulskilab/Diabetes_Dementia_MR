@@ -1,0 +1,72 @@
+---
+title: "Two-sample MR - Diabetes Dementia"
+author: "Mingzhou_Fu"
+date: "1/15/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+# library(devtools)
+# install_github("MRCIEU/TwoSampleMR")
+library(TwoSampleMR)
+```
+
+```{r}
+# List available GWASs
+ao = available_outcomes()
+# Get instruments
+exposure_dat_1 = extract_instruments("ieu-a-23",   # Mahajan,DIAGRAM,2014
+                                     p1 = 1,   # significance threshold
+                                     clump = FALSE) 
+exposure_dat_2 = extract_instruments("ieu-a-24", # Morris,DIAGRAMplusMetabochip,2012
+                                     p1 = 1,   # significance threshold
+                                     clump = FALSE) 
+exposure_dat_3 = extract_instruments("ebi-a-GCST006867", # Xue, 2018
+                                     p1 = 1,   # significance threshold
+                                     clump = FALSE)
+# This GWAS is not working, we need to extract summary statistics from the original file
+# However, this is not working because 
+library(R.utils)
+library(readr)
+Xue_T2DM = gunzip("30054458-GCST006867-EFO_0001360-build37.f.tsv.gz", "30054458-GCST006867-EFO_0001360-build37.f.tsv")
+Xue_T2DM = read_tsv("30054458-GCST006867-EFO_0001360-build37.f.tsv")
+Xue_T2DM = as.data.frame(Xue_T2DM)
+# Then we modify the df to be similar to the extracted ones
+exposure_xue = 
+  Xue_T2DM %>% 
+  rename(beta.exposure = beta,
+         pval.exposure = p_value,
+         se.exposure = standard_error,
+         chr.exposure = chromosome,
+         samplesize.exposure = n,
+         pos.exposure = base_pair_location,
+         effect_allele.exposure = effect_allele,
+         other_allele.exposure = other_allele,
+         eaf.exposure = effect_allele_frequency,
+         SNP = variant_id) %>% 
+  mutate(id.exposure = "ebi-a-GCST006867") %>% 
+  mutate(exposure = "Type 2 diabetes || id:ebi-a-GCST006867") %>% 
+  mutate(mr_keep.exposure = TRUE) %>% 
+  mutate(pval_origin.exposure = "reported") %>% 
+  mutate(data_source.exposure = "igd") %>% 
+  select(beta.exposure, pval.exposure, se.exposure, chr.exposure, samplesize.exposure, pos.exposure, id.exposure,
+         SNP, effect_allele.exposure, other_allele.exposure, eaf.exposure, exposure, mr_keep.exposure, pval_origin.exposure, data_source.exposure)
+
+# Get effects of instruments on outcome
+outcome_dat = extract_outcome_data(snps = exposure_dat_2$SNP, outcomes = "ieu-b-2") # Kunkle,2019
+outcome_dat_xue = extract_outcome_data(snps = exposure_xue$SNP, outcomes = "ieu-b-2") # Kunkle,2019
+# Harmonise the exposure and outcome data
+dat = harmonise_data(exposure_dat_2, outcome_dat)
+dat_2 = harmonise_data(exposure_xue, outcome_dat_xue)
+# Perform MR
+res = mr(dat)
+res_2 = mr(dat_2)
+View(res)
+
+
+```
+

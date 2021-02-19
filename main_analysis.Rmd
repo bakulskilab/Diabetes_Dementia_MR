@@ -36,7 +36,7 @@ eligible_nolabel = remove_all_labels(final_sample)
 table_uni = descrTable(gen_ancestry ~ diab_cat + AD_cat + age + sex_cat + education + 
                           stroke_cat + APOE2010_cat + HTN_cat + smoking_cat + drinking_cat + proxy_cat + R10BMI + PGS3_T2DM_1 + PGS_AD_Kunkle_0_01,
                           eligible_nolabel, hide.no = "No", show.all = T)
-compareGroups::export2csv(table_uni, file = paste0(output_path, 'univariate_0903.csv'))
+compareGroups::export2csv(table_uni, file = paste0(output_path, 'univariate_0129.csv'))
 ```
 
 # Part 2: Bivariate analysis
@@ -47,13 +47,13 @@ table1_cog = descrTable(AD_cat ~ diab_cat + age + sex_cat + education +
                           stroke_cat + APOE2010_cat + HTN_cat + smoking_cat + drinking_cat + R10BMI + 
                           PGS_T2D_hrs + PGS3_T2DM_1 + PGS3_T2DM_0_05 + PGS_AD_Kunkle_0_01,
                           eligible_nolabel_afric, hide.no = "No", show.all = T)
-compareGroups::export2csv(table1_cog, file = paste0(output_path, 'cognitive_afric_0115.csv'))
+compareGroups::export2csv(table1_cog, file = paste0(output_path, 'cognitive_afric_0129.csv'))
 # Build table: 2. HDL clinical level
 table1_diab = descrTable(diab_cat ~ AD_cat + age + sex_cat + education + 
                           stroke_cat + APOE2010_cat + HTN_cat + smoking_cat + drinking_cat + R10BMI + 
                           PGS_T2D_hrs + PGS3_T2DM_1 + PGS3_T2DM_0_05 + PGS_AD_Kunkle_0_01,
                           eligible_nolabel_afric, hide.no = "No", show.all = T)
-compareGroups::export2csv(table1_diab, file = paste0(output_path, 'diabetes_afric_0115.csv'))
+compareGroups::export2csv(table1_diab, file = paste0(output_path, 'diabetes_afric_0129.csv'))
 ```
 
 ```{r Table1: bivariate, message=FALSE, warning=FALSE}
@@ -63,13 +63,13 @@ table1_cog = descrTable(AD_cat ~ diab_cat + age + sex_cat + education +
                           stroke_cat + APOE2010_cat + HTN_cat + smoking_cat + drinking_cat + R10BMI + 
                           PGS_T2D_hrs + PGS3_T2DM_1 + PGS3_T2DM_0_05 + PGS_AD_Kunkle_0_01,
                           eligible_nolabel_europ, hide.no = "No", show.all = T)
-compareGroups::export2csv(table1_cog, file = paste0(output_path, 'cognitive_europ_0903.csv'))
+compareGroups::export2csv(table1_cog, file = paste0(output_path, 'cognitive_europ_0129.csv'))
 # Build table: 2. HDL clinical level
 table1_diab = descrTable(diab_cat ~ AD_cat + age + sex_cat + education + 
                           stroke_cat + APOE2010_cat + HTN_cat + smoking_cat + drinking_cat + R10BMI + 
                           PGS_T2D_hrs + PGS3_T2DM_1 + PGS3_T2DM_0_05 + PGS_AD_Kunkle_0_01,
                           eligible_nolabel_europ, hide.no = "No", show.all = T)
-compareGroups::export2csv(table1_diab, file = paste0(output_path, 'diabetes_europ_0903.csv'))
+compareGroups::export2csv(table1_diab, file = paste0(output_path, 'diabetes_europ_0129.csv'))
 ```
 
 # Part 3: Logistic regression
@@ -223,19 +223,19 @@ diab_adpgs_tot = make_OR_table(lst_model, 2, 'diab_adpgs_t_')
 ##### 2) Direct effect
 ```{r HDL PGS and Cognitive status, message=FALSE, warning=FALSE}
 # Crude
-crude = as.formula(paste('AD_bin ~ ', 'PGS3_T2DM_1 + R10DIABE'))
+crude = as.formula(paste('R10DIABE ~ ', 'PGS_AD_Kunkle_0_01 + AD_bin'))
 CIND_crude = glm(crude, data = cind_normal, family = 'binomial')
 Dem_crude = glm(crude, data = dementia_normal, family = 'binomial')
 # Adding in demographic variables
-f1 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', demographic))
+f1 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', demographic))
 CIND_adj1 = glm(f1, data = cind_normal, family = 'binomial')
 Dem_adj1 = glm(f1, data = dementia_normal, family = 'binomial')
 # Adding in health status variables
-f2 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', health_behavior))
+f2 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', health_behavior))
 CIND_adj2 = glm(f2, data = cind_normal, family = 'binomial')
 Dem_adj2 = glm(f2, data = dementia_normal, family = 'binomial')
 # Adding in AD genetic variables
-f3 = as.formula(paste('AD_bin ~ PGS3_T2DM_1 + R10DIABE + ', gene_add))
+f3 = as.formula(paste('R10DIABE ~ PGS_AD_Kunkle_0_01 + AD_bin + ', gene_add))
 CIND_adj3 = glm(f3, data = cind_normal, family = 'binomial')
 Dem_adj3 = glm(f3, data = dementia_normal, family = 'binomial')
 
@@ -314,19 +314,24 @@ convert.z.score <- function(z, one.sided = NULL) {
     }
     return(pval);
 }
+
+z_lst = c(4.11, 2, 2.15, 2.15, 1.79, 0.12, 0.71, 0.64)
+for(z in z_lst) {
+  print(convert.z.score(z))
+}
 ```
 
 ```{r}
 sheets_OR = list('main_diab' = main_diab,
                  'diab_mr_df' = diab_mr_df)
-write_xlsx(sheets_OR, path = paste0(output_path, 'main_diab_0903.xlsx'))
+write_xlsx(sheets_OR, path = paste0(output_path, 'main_diab_0129.xlsx'))
 ```
 
 # Part 4: Correlation tests: PGS T2DM and all other covariates
 ```{r message=FALSE, warning=FALSE}
 var_names <- c('R10DIABE', 'AD10', 'sex', 'R10HIBPE', 'STROKE10', 'smoke10', 'R10DRINK', 'APOE2010_bin', 
                'age', 'education', 'R10BMI', 'PGS_AD_Kunkle_0_01')
-explanary_names <- c('Diabetes', 'Cognitive status', 'Sex', 'Hypertension', 'Stroke', 'Smoking status', 'Drinking status', 'APOE4 allele carrier', 
+explanary_names <- c('Type 2 Diabetes', 'Cognitive status', 'Sex', 'Hypertension', 'Stroke', 'Smoking status', 'Drinking status', 'APOE4 allele carrier', 
                      'Age', 'Years of education', 'BMI', "PGS for Alzheimer's disease")
 
 model <- lapply(var_names, function(x) {
@@ -389,7 +394,7 @@ tabletext <- cbind(
 pop.cols <- c("black","black","black")
 
 
-pdf("~/Desktop/PGS_Forest_0908.pdf",width = 10, height = 6)
+pdf("~/Desktop/PGS_Forest_0129.pdf",width = 10, height = 6)
 forestplot(labeltext = tabletext, graph.pos = 1,
            mean = c(NA, NA, forest.data$beta), 
            lower = c(NA, NA, forest.data$lower_CI),
